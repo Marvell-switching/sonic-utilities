@@ -2155,7 +2155,6 @@ def add_portchannel(ctx, portchannel_name, min_links, fallback, fast_rate):
     
     fvs = {
         'admin_status': 'up',
-        'mtu': '9100',
         'lacp_key': 'auto',
         'fast_rate': fast_rate.lower(),
     }
@@ -2207,6 +2206,12 @@ def remove_portchannel(ctx, portchannel_name):
     except JsonPatchConflict:
         ctx.fail("{} is not present.".format(portchannel_name))
 
+def check_table_and_fail(db, table_name, check_func, fail_message):
+    for key, value in db.get_table(table_name):
+        if check_func(key, value):
+            ctx.fail(fail_message.format(value))
+
+
 @portchannel.group(cls=clicommon.AbbreviationGroup, name='member')
 @click.pass_context
 def portchannel_member(ctx):
@@ -2238,12 +2243,7 @@ def add_portchannel_member(ctx, portchannel_name, port_name):
             ctx.fail("{} is not present.".format(portchannel_name))
  
         # Don't allow a port to be member of port channel if it is configured with an IP address
-        for key,value in db.get_table('INTERFACE').items():
-            if type(key) == tuple:
-                continue
-            if key == port_name:
-                ctx.fail(" {} has ip address configured".format(port_name))  # TODO: MISSING CONSTRAINT IN YANG MODEL
-                return
+        check_table_and_fail(db, 'INTERFACE', lambda k, v: k == port_name, " {} has ip address configured")  # TODO: MISSING CONSTRAINT IN YANG MODE
 
         for key in db.get_keys('VLAN_SUB_INTERFACE'):
             if type(key) == tuple:
@@ -2254,15 +2254,10 @@ def add_portchannel_member(ctx, portchannel_name, port_name):
                 ctx.fail(" {} has subinterfaces configured".format(port_name))  # TODO: MISSING CONSTRAINT IN YANG MODEL
 
         # Dont allow a port to be member of port channel if it is configured as a VLAN member
-        for k,v in db.get_table('VLAN_MEMBER'):
-            if v == port_name:
-                ctx.fail("%s Interface configured as VLAN_MEMBER under vlan : %s" %(port_name,str(k)))   # TODO: MISSING CONSTRAINT IN YANG MODEL
-                return
+        check_table_and_fail(db, 'VLAN_MEMBER', lambda k, v: v == port_name, "{} Interface configured as VLAN_MEMBER under vlan : {}") # TODO: MISSING CONSTRAINT IN YANG MODEL
 
         # Dont allow a port to be member of port channel if it is already member of a port channel
-        for k,v in db.get_table('PORTCHANNEL_MEMBER'):
-            if v == port_name:
-                ctx.fail("{} Interface is already member of {} ".format(v,k))    # TODO: MISSING CONSTRAINT IN YANG MODEL
+        check_table_and_fail(db, 'PORTCHANNEL_MEMBER', lambda k, v: v == port_name, "{} Interface is already member of {} ")    # TODO: MISSING CONSTRAINT IN YANG MODEL
 
         # Dont allow a port to be member of port channel if its speed does not match with existing members
         for k,v in db.get_table('PORTCHANNEL_MEMBER'):
@@ -2280,16 +2275,19 @@ def add_portchannel_member(ctx, portchannel_name, port_name):
 
         # Dont allow a port to be member of port channel if its MTU does not match with portchannel
         portchannel_entry =  db.get_entry('PORTCHANNEL', portchannel_name)
-        if portchannel_entry and portchannel_entry.get(PORT_MTU) is not None :
+        if portchannel_entry:
             port_entry = db.get_entry('PORT', port_name)
-
             if port_entry and port_entry.get(PORT_MTU) is not None:
                 port_mtu = port_entry.get(PORT_MTU)
-
-                portchannel_mtu = portchannel_entry.get(PORT_MTU) # TODO: MISSING CONSTRAINT IN YANG MODEL
-                if portchannel_mtu != port_mtu:
-                    ctx.fail("Port MTU of {} is different than the {} MTU size"
-                             .format(port_name, portchannel_name))
+                portchannel_mtu = portchannel_entry.get(PORT_MTU)                
+                # If portchannel MTU is not set, set it to the first port MTU
+                if not portchannel_mtu:
+                    portchannel_mtu = port_mtu
+                    db.mod_entry('PORTCHANNEL', portchannel_name, {PORT_MTU: port_mtu})
+                
+                if (not isinstance(portchannel_mtu, type(port_mtu))) or (portchannel_mtu != port_mtu):  # TODO: MISSING CONSTRAINT IN YANG MODEL
+                    ctx.fail("Port MTU of {} is different than the {} MTU size "
+                             .format(port_name, portchannel_name))                    
 
         # Dont allow a port to be member of port channel if its TPID is not at default 0x8100
         # If TPID is supported at LAG level, when member is added, the LAG's TPID is applied to the
@@ -2350,8 +2348,14 @@ def del_portchannel_member(ctx, portchannel_name, port_name):
     
     try:
         db.set_entry('PORTCHANNEL_MEMBER', portchannel_name + '|' + port_name, None)
+        # If this was the last port in the portchannel, set the portchannel MTU to None
+        portchannel_list = db.get_table(CFG_PORTCHANNEL_PREFIX)
+        if (portchannel_list is None) or (portchannel_list == {}):
+            db.mod_entry('PORTCHANNEL', portchannel_name, {PORT_MTU: None})
+            
     except JsonPatchConflict:
         ctx.fail("Invalid or nonexistent portchannel or interface. Please ensure existence of portchannel member.")
+
 
 @portchannel.group(cls=clicommon.AbbreviationGroup, name='retry-count')
 @click.pass_context
