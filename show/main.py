@@ -2122,7 +2122,9 @@ def time_range_configurations(db: ConfigDBConnector, time_range_name):
         table_data = []
         for name, config in configurations.items():
             status = statuses_dict.get(name, "Unknown")
-            years = config.get('years', 'N/A')
+            start_year = config.get('start_year', '')
+            end_year = config.get('end_year', '')
+            years = f"{start_year}{'-' if start_year or end_year else ''}{end_year}" if start_year or end_year else "N/A"
             first_conf = config['configurations'][0] if 'configurations' in config and config['configurations'] else ''
             base_row = [name, status, config['start'], config['end'], years, first_conf]
             table_data.append(base_row)
