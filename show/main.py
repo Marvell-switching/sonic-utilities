@@ -2081,6 +2081,159 @@ def ztp(status, verbose):
        cmd += ["--verbose"]
     run_command(cmd, display_cmd=verbose)
 
+#
+# 'time range' command ("show time-range-configurations")
+#
+@cli.command("time-range-configurations")
+@click.argument('time_range_name', required=False)
+@clicommon.pass_db
+def time_range_configurations(db: ConfigDBConnector, time_range_name):
+    """Show time range configurations"""    
+    def get_time_range_statuses(db):
+        """Get time range statuses from STATE_DB"""
+        status_dict = {}
+        status_keys = db.keys(db.STATE_DB, "TIME_RANGE_STATUS_TABLE|*")
+
+        if status_keys is not None:
+            for key in status_keys:
+                key_values = key.split('|')
+                time_range_name = key_values[1]
+                values = db.get_all(db.STATE_DB, key)
+                if values and "status" in values:
+                    status_dict[time_range_name] = values["status"]
+
+        return status_dict
+    
+    def append_scheduled_configurations(config_db, time_range_table):
+        """Append scheduled configurations from config_db to time range table"""
+        scheduled_configs = config_db.get_table('SCHEDULED_CONFIGURATIONS')
+        
+        for config_name, config in scheduled_configs.items():
+            time_range = config.get('time_range')
+            if time_range in time_range_table:
+                if 'configurations' not in time_range_table[time_range]:
+                    time_range_table[time_range]['configurations'] = []
+                time_range_table[time_range]['configurations'].append(config_name)        
+        
+    
+    def print_all_time_range_configurations(configurations, statuses_dict):
+        """Print all time range configurations in tabular format"""
+        # Prepare data for tabulate
+        table_data = []
+        for name, config in configurations.items():
+            status = statuses_dict.get(name, "Unknown")
+            years = config.get('years', 'N/A')
+            first_conf = config['configurations'][0] if 'configurations' in config and config['configurations'] else ''
+            base_row = [name, status, config['start'], config['end'], years, first_conf]
+            table_data.append(base_row)
+
+            # Add additional configurations if any
+            if 'configurations' in config:
+                for conf in config['configurations'][1:]:
+                    table_data.append(["", "", "", "", "", conf])
+
+        headers = ["Time Range", "Status", "Start Schedule", "End Schedule", "Years", "Configurations"]
+        click.echo(tabulate(table_data, headers=headers))
+        
+    def print_time_range_configuration(time_range_name, time_range_table, statuses_dict):
+        """Print details of a specific time range configuration"""
+        if time_range_name not in time_range_table:
+            click.echo(f"Time range configuration '{time_range_name}' not found")
+            return
+
+        config = time_range_table[time_range_name]
+        status = statuses_dict.get(time_range_name, "Unknown")
+        click.echo(f"Time Range: {time_range_name}")
+        click.echo(f"Status: {status}")
+        click.echo(f"Start Schedule: {config['start']}")
+        click.echo(f"End Schedule: {config['end']}")
+        click.echo(f"Years: {config.get('years', 'N/A')}")
+        click.echo("Configurations:")
+        for conf in config.get('configurations', []):
+            click.echo(f"    {conf}")
+                    
+    config_db = db.cfgdb
+    time_range_table = config_db.get_table('TIME_RANGE')
+    time_range_status_dict = get_time_range_statuses(db.db)
+    append_scheduled_configurations(config_db, time_range_table)
+    
+    if time_range_name:
+        # Show details for the specific time range name
+        print_time_range_configuration(time_range_name, time_range_table, time_range_status_dict)
+    else:
+        # Show all time range configurations
+        print_all_time_range_configurations(time_range_table, time_range_status_dict)
+
+
+#
+# 'scheduled configurations' command ("show scheduled-configurations")
+#
+@cli.command("scheduled-configurations")
+@click.argument('scheduled_configuration_name', required=False)
+@clicommon.pass_db
+def scheduled_configurations(db: ConfigDBConnector, scheduled_configuration_name):
+    """Show time range configurations"""    
+    def get_time_range_statuses(db):
+        """Get time range statuses from STATE_DB"""
+        status_dict = {}
+        status_keys = db.keys(db.STATE_DB, "TIME_RANGE_STATUS_TABLE|*")
+
+        if status_keys is not None:
+            for key in status_keys:
+                key_values = key.split('|')
+                time_range_name = key_values[1]
+                values = db.get_all(db.STATE_DB, key)
+                if values and "status" in values:
+                    status_dict[time_range_name] = values["status"]
+
+        return status_dict
+    
+    def append_time_range_status_to_scheduled_configurations(scheduled_config_table, time_range_status_dict):
+        """Append time range status to scheduled configurations"""
+        for _, config in scheduled_config_table.items():
+            time_range = config.get('time_range')
+            status = time_range_status_dict.get(time_range, "Unbound")
+            config['status'] = status
+            
+
+    
+    def print_all_scheduled_configurations(sched_config_table):
+        """Print all time range configurations in tabular format"""
+        # Prepare data for tabulate
+        table_data = []
+        for name, config in sched_config_table.items():
+            status = config.get('status', "Unbound")
+            table_data.append([name, status, config['time_range']])
+        
+        alphabetical_order_data = sorted(table_data, key=lambda x: x[0])
+        headers = ["Configuration Name", "Status", "Time Range"]
+        click.echo(tabulate(alphabetical_order_data, headers=headers))
+        
+    def print_scheduled_configuration(scheduled_configuration_name, scheduled_config_table):
+        """Print details of a specific time range configuration"""
+        if scheduled_configuration_name not in scheduled_config_table:
+            click.echo(f"Scheduled configuration '{scheduled_configuration_name}' not found")
+            return
+        import json
+        
+        config = scheduled_config_table[scheduled_configuration_name]
+        click.echo(f"Configuration Name: {scheduled_configuration_name}")
+        click.echo(f"Status: {config.get('status', 'Unbound')}")
+        click.echo(f"Time Range: {config['time_range']}")
+        click.echo("Configuration:")
+        click.echo(json.dumps(json.loads(config.get('configuration').replace('\'', '\"')), sort_keys=True, indent=4))
+                    
+    config_db = db.cfgdb
+    scheduled_config_table = config_db.get_table('SCHEDULED_CONFIGURATIONS')
+    time_range_status_dict = get_time_range_statuses(db.db)
+    append_time_range_status_to_scheduled_configurations(scheduled_config_table, time_range_status_dict)
+    
+    if scheduled_configuration_name:
+        # Show details for the specific time range name
+        print_scheduled_configuration(scheduled_configuration_name, scheduled_config_table)
+    else:
+        # Show all time range configurations
+        print_all_scheduled_configurations(scheduled_config_table)
 
 #
 # 'bfd' group ("show bfd ...")
