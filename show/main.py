@@ -2151,7 +2151,8 @@ def time_range_configurations(db: ConfigDBConnector, time_range_name):
         click.echo("Configurations:")
         for conf in config.get('configurations', []):
             click.echo(f"    {conf}")
-                    
+
+    #### main code ####
     config_db = db.cfgdb
     time_range_table = config_db.get_table('TIME_RANGE')
     time_range_status_dict = get_time_range_statuses(db.db)
@@ -2164,7 +2165,6 @@ def time_range_configurations(db: ConfigDBConnector, time_range_name):
         # Show all time range configurations
         print_all_time_range_configurations(time_range_table, time_range_status_dict)
 
-
 #
 # 'scheduled configurations' command ("show scheduled-configurations")
 #
@@ -2172,7 +2172,7 @@ def time_range_configurations(db: ConfigDBConnector, time_range_name):
 @click.argument('scheduled_configuration_name', required=False)
 @clicommon.pass_db
 def scheduled_configurations(db: ConfigDBConnector, scheduled_configuration_name):
-    """Show time range configurations"""    
+    """Show scheduled configurations"""  
     def get_time_range_statuses(db):
         """Get time range statuses from STATE_DB"""
         status_dict = {}
@@ -2192,13 +2192,13 @@ def scheduled_configurations(db: ConfigDBConnector, scheduled_configuration_name
         """Append time range status to scheduled configurations"""
         for _, config in scheduled_config_table.items():
             time_range = config.get('time_range')
-            status = time_range_status_dict.get(time_range, "Unbound")
+            status = time_range_status_dict.get(time_range)
             config['status'] = status
             
 
     
     def print_all_scheduled_configurations(sched_config_table):
-        """Print all time range configurations in tabular format"""
+        """Print all scheduled configurations in tabular format"""
         # Prepare data for tabulate
         table_data = []
         for name, config in sched_config_table.items():
@@ -2210,29 +2210,29 @@ def scheduled_configurations(db: ConfigDBConnector, scheduled_configuration_name
         click.echo(tabulate(alphabetical_order_data, headers=headers))
         
     def print_scheduled_configuration(scheduled_configuration_name, scheduled_config_table):
-        """Print details of a specific time range configuration"""
+        """Print details of a specific scheduled configuration"""
         if scheduled_configuration_name not in scheduled_config_table:
             click.echo(f"Scheduled configuration '{scheduled_configuration_name}' not found")
             return
-        import json
-        
+
         config = scheduled_config_table[scheduled_configuration_name]
         click.echo(f"Configuration Name: {scheduled_configuration_name}")
         click.echo(f"Status: {config.get('status', 'Unbound')}")
         click.echo(f"Time Range: {config['time_range']}")
         click.echo("Configuration:")
         click.echo(json.dumps(json.loads(config.get('configuration').replace('\'', '\"')), sort_keys=True, indent=4))
-                    
+
+    #### main code ####
     config_db = db.cfgdb
     scheduled_config_table = config_db.get_table('SCHEDULED_CONFIGURATIONS')
     time_range_status_dict = get_time_range_statuses(db.db)
     append_time_range_status_to_scheduled_configurations(scheduled_config_table, time_range_status_dict)
-    
+
     if scheduled_configuration_name:
-        # Show details for the specific time range name
+        # Show details for the specific configuration name
         print_scheduled_configuration(scheduled_configuration_name, scheduled_config_table)
     else:
-        # Show all time range configurations
+        # Show all scheduled configurations
         print_all_scheduled_configurations(scheduled_config_table)
 
 #
