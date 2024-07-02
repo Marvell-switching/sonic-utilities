@@ -543,7 +543,7 @@ def add(address, retransmit, timeout, key, auth_type, auth_port, pri, use_mgmt_v
             data['passkey'] = key
         if use_mgmt_vrf :
             data['vrf'] = "mgmt"
-        if message_authenticator_flag:
+        if require_message_authenticator:
             data['require_message_authenticator'] = True
         if ADHOC_VALIDATION:
             if source_interface :
