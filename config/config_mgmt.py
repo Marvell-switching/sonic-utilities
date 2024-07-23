@@ -3,6 +3,8 @@ config_mgmt.py provides classes for configuration validation and for Dynamic
 Port Breakout.
 '''
 
+from enum import Enum, auto
+from logging import config
 import os
 import re
 import shutil
@@ -25,7 +27,7 @@ sonic_cfggen = load_module_from_source('sonic_cfggen', '/usr/local/bin/sonic-cfg
 
 # Globals
 YANG_DIR = "/usr/local/yang-models"
-CONFIG_DB_JSON_FILE = '/etc/sonic/confib_db.json'
+CONFIG_DB_JSON_FILE = '/etc/sonic/config_db.json'
 # TODO: Find a place for it on sonic switch.
 DEFAULT_CONFIG_DB_JSON_FILE = '/etc/sonic/port_breakout_config_db.json'
 
@@ -983,3 +985,141 @@ def readJsonFile(fileName):
         raise Exception(e)
 
     return result
+
+class ConfigMgmtScheduledConfig(ConfigMgmt):
+    '''
+    Config MGMT class for Scheduled Configurations. This is derived from ConfigMgmt.
+    '''
+
+    def __init__(self, source="configDB", debug=False, allowTablesWithoutYang=True):
+        '''
+        Initialise the class
+
+        Parameters:
+            source (str): source for input config, default configDb else file.
+            debug (bool): verbose mode.
+            allowTablesWithoutYang (bool): allow tables without yang model in
+                config or not.
+
+        Returns:
+            void
+        '''
+        try:
+            super().__init__(source=source, debug=debug, allowTablesWithoutYang=allowTablesWithoutYang)
+
+        except Exception as e:
+            self.sysLog(doPrint=True, logLevel=syslog.LOG_ERR, msg=str(e))
+            raise Exception('ConfigMgmtScheduledConfig Class creation failed')
+
+    def validateConfigData(self):
+        '''
+        Validate current config data Tree, including scheduled configurations.
+
+        Parameters:
+            void
+
+        Returns:
+            bool
+        '''
+        # First validate the base configuration
+        if not super().validateConfigData():
+            return False
+
+        # Validate the scheduled configurations
+        try:
+            self._validateScheduledConfigurations()
+        except Exception as e:
+            self.sysLog(doPrint=True, logLevel=syslog.LOG_ERR, msg=f'Scheduled Config Data Validation Failed: {str(e)}')
+            return False
+
+        self.sysLog(msg='Scheduled Config Data Validation successful', doPrint=True)
+        return True
+
+    def _validateScheduledConfigurations(self):
+        '''
+        Validate the scheduled configurations within the data tree.
+
+        Parameters:
+            void
+
+        Returns:
+            void
+        '''
+        # Get the scheduled configurations from the loaded data
+        scheduled_configs = self.sy.root.find_path("/SCHEDULED_CONFIGURATIONS")
+
+        if scheduled_configs is None:
+            return
+
+        for scheduled_config in scheduled_configs.data():
+            config_name = scheduled_config.name()
+            self.sysLog(msg=f'Validating Scheduled Configuration: {config_name}', doPrint=True)
+
+            # Validate the 'configuration' field
+            config_node = scheduled_config.child().find_path("configuration")
+            if config_node:
+                self._validate_node(config_node)
+
+            # Validate the 'deactivation_configuration' field
+            deactivation_node = scheduled_config.child().find_path("deactivation_configuration")
+            if deactivation_node:
+                self._validate_node(deactivation_node)
+
+    def _validate_node(self, node):
+        '''
+        Recursively validate a configuration node.
+
+        Parameters:
+            node (lyd_node): The node to validate.
+
+        Returns:
+            void
+        '''
+        try:
+            node.validate(ly.LYD_OPT_CONFIG, self.sy.ctx)
+        except Exception as e:
+            self.fail(f'Validation failed for node {node.path()}: {str(e)}')
+            
+    def writeConfigDB(self, configJson = ""):
+        '''
+        Write the validated config to Config DB.
+
+        Parameters:
+            configJson (dict): config to push in config DB.
+
+        Returns:
+            void
+        '''
+        if configJson == "":
+            configJson = self.configdbJsonIn
+            
+        self.sysLog(doPrint=True, msg='Writing in Config DB')
+        data = dict()
+        if self.configdb is None:
+            configdb = ConfigDBConnector()
+            configdb.connect(False)
+        else:
+            configdb = self.configdb
+        sonic_cfggen.deep_update(data, configJson)
+        self.sysLog(msg="Write in DB: {}".format(data))
+        configdb.mod_config(sonic_cfggen.FormatConverter.output_to_db(data))
+
+
+
+class ConfigMgmtType(Enum):
+    BASIC = auto()
+    DPB = auto()
+    SCHEDULED_CONFIG = auto()
+
+
+def load_ConfigMgmt(type: ConfigMgmtType = ConfigMgmtType.BASIC, source: str = "", verbose: bool =False, allowTablesWithoutYang: bool = True, sonicYangOptions: int = 0, configdb=None) -> ConfigMgmt:
+    """ Load config for the commands which are capable of change in config DB. """
+    try:
+        if type == ConfigMgmtType.DPB:
+            return ConfigMgmtDPB(source=source, debug=verbose, allowTablesWithoutYang=allowTablesWithoutYang)
+        elif type == ConfigMgmtType.SCHEDULED_CONFIG:
+            return ConfigMgmtScheduledConfig(source=source, debug=verbose, allowTablesWithoutYang=allowTablesWithoutYang)
+        else: # ConfigMgmtType.BASIC
+            return ConfigMgmt(source=source, debug=verbose, allowTablesWithoutYang=allowTablesWithoutYang, sonicYangOptions=sonicYangOptions, configdb=configdb)
+    except Exception as e:
+        raise Exception("Failed to load the config. Error: {}".format(str(e)))

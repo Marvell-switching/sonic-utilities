@@ -56,7 +56,7 @@ from . import nat
 from . import vlan
 from . import vxlan
 from . import plugins
-from .config_mgmt import ConfigMgmtDPB, ConfigMgmt
+from .config_mgmt import ConfigMgmtDPB, ConfigMgmt, ConfigMgmtType, load_ConfigMgmt, ConfigMgmtScheduledConfig
 from . import mclag
 from . import syslog
 from . import switchport
@@ -206,14 +206,6 @@ def _validate_interface_mode(ctx, breakout_cfg_file, interface_name, target_brko
         click.secho("[WARNING] No action will be taken as current and desired Breakout Mode are same.", fg='magenta')
         sys.exit(0)
     return True
-
-def load_ConfigMgmt(verbose):
-    """ Load config for the commands which are capable of change in config DB. """
-    try:
-        cm = ConfigMgmtDPB(debug=verbose)
-        return cm
-    except Exception as e:
-        raise Exception("Failed to load the config. Error: {}".format(str(e)))
 
 def breakout_warnUser_extraTables(cm, final_delPorts, confirm=True):
     """
@@ -2086,7 +2078,7 @@ def override_config_table(db, input_config_db, dry_run):
             # The ConfigMgmt will load YANG and running
             # config during initialization.
             try:
-                cm = ConfigMgmt(configdb=config_db)
+                cm: ConfigMgmt = load_ConfigMgmt(configdb=config_db)
                 cm.validateConfigData()
             except Exception as ex:
                 click.secho("Failed to validate running config. Error: {}".format(ex), fg="magenta")
@@ -2100,7 +2092,7 @@ def override_config_table(db, input_config_db, dry_run):
             cm = None
             try:
                 # YANG validate of config minigraph generated
-                cm = ConfigMgmt(configdb=config_db)
+                cm: ConfigMgmt= load_ConfigMgmt(configdb=config_db)
                 cm.validateConfigData()
             except Exception as ex:
                 log.log_warning("Failed to validate running config. Alerting: {}".format(ex))
@@ -4552,7 +4544,7 @@ def breakout(ctx, interface_name, mode, verbose, force_remove_dependencies, load
     # Start Interation with Dy Port BreakOut Config Mgmt
     try:
         """ Load config for the commands which are capable of change in config DB """
-        cm = load_ConfigMgmt(verbose)
+        cm: ConfigMgmtDPB = load_ConfigMgmt(type=ConfigMgmtType.DPB, verbose=verbose)
 
         """ Delete all ports if forced else print dependencies using ConfigMgmt API """
         final_delPorts = [intf for intf in del_intf_dict]
@@ -7630,7 +7622,6 @@ def date(date, time):
     date_time = f'{date} {time}'
     clicommon.run_command(['timedatectl', 'set-time', date_time])
 
-
 #
 # 'asic-sdk-health-event' group ('config asic-sdk-health-event ...')
 #
@@ -7748,6 +7739,31 @@ def warning(db, category_list, max_events, namespace):
 @clicommon.pass_db
 def notice(db, category_list, max_events, namespace):
     handle_asic_sdk_health_suppress(db, 'notice', category_list, max_events, namespace)
+
+@config.command("scheduled-configuration")
+@click.argument('json_file_name', metavar='<json_name>', required=True)
+@click.option('-d', '--dry-run', is_flag=True, help="Validate configuration without applying to config db")
+def scheduled_configuration(json_file_name, dry_run):
+    """ config scheduled configuration """
+    
+    verbose = False
+    
+    try:
+        cm: ConfigMgmtScheduledConfig = load_ConfigMgmt(type=ConfigMgmtType.SCHEDULED_CONFIG, source= json_file_name, verbose=verbose)
+    except Exception as e:
+        error_msg = "Failed to load ConfigMgmtScheduledConfig: {}".format(str(e))
+        click.secho(error_msg, fg='red')
+        
+    if not cm.validateConfigData():
+        error_msg = "Failed to validate data"
+        click.secho(error_msg, fg='red')
+    
+    if dry_run:
+        cm.print_data()
+        return
+    
+    cm.writeConfigDB()
+
 
 
 if __name__ == '__main__':
