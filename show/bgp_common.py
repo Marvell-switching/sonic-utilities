@@ -228,9 +228,9 @@ def merge_to_combined_route(combined_route, route, new_info_l):
                                 additional_nh_l.append(copy.deepcopy(nh))
 
                         if len(additional_nh_l) > 0:
-                            combined_route[route][j]['internalNextHopNum'] + len(additional_nh_l)
+                            combined_route[route][j]['internalNextHopNum'] += len(additional_nh_l)
                             if combined_route[route][j]['internalNextHopActiveNum'] > 0 and new_info['internalNextHopActiveNum'] > 0:
-                                combined_route[route][j]['internalNextHopActiveNum'] + len(additional_nh_l)
+                                combined_route[route][j]['internalNextHopActiveNum'] += len(additional_nh_l)
                             combined_route[route][j]['nexthops'] += additional_nh_l
                         # the nexhops merged, no need to add the new_info
                         skip_this_new_info = True
@@ -393,7 +393,8 @@ def show_routes(args, namespace, display, verbose, ipver):
 
         # Multi-asic show ip route with additional parms are handled by going to FRR directly and get those outputs from each namespace
         if found_other_parms:
-            print("{}:".format(ns))
+            if ns:
+                print("{}:".format(ns))
             print(output)
             continue
 
