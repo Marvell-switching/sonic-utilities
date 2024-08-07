@@ -7744,27 +7744,28 @@ def notice(db, category_list, max_events, namespace):
 @click.argument('json_file_name', metavar='<json_name>', required=True)
 @click.option('-d', '--dry-run', is_flag=True, help="Validate configuration without applying to config db")
 def scheduled_configuration(json_file_name, dry_run):
-    """ config scheduled configuration """
+    """ config scheduled-configuration """
     
     verbose = False
-    
+    cm: ConfigMgmtScheduledConfig
     try:
-        cm: ConfigMgmtScheduledConfig = load_ConfigMgmt(type=ConfigMgmtType.SCHEDULED_CONFIG, source= json_file_name, verbose=verbose)
+        cm = load_ConfigMgmt(ConfigMgmtType.SCHEDULED_CONFIG, source= json_file_name, verbose=verbose)
     except Exception as e:
         error_msg = "Failed to load ConfigMgmtScheduledConfig: {}".format(str(e))
         click.secho(error_msg, fg='red')
+        return
         
     if not cm.validateConfigData():
         error_msg = "Failed to validate data"
         click.secho(error_msg, fg='red')
+        return
     
     if dry_run:
-        cm.print_data()
+        click.echo("Successfully validated configuration data, dry-run mode enabled, no changes will be applied")
         return
     
     cm.writeConfigDB()
-
-
+    
 
 if __name__ == '__main__':
     config()

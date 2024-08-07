@@ -1046,26 +1046,32 @@ class ConfigMgmtScheduledConfig(ConfigMgmt):
             void
         '''
         # Get the scheduled configurations from the loaded data
-        scheduled_configs = self.sy.root.find_path("/SCHEDULED_CONFIGURATIONS")
+        scheduled_configs = self.configdbJsonIn.get("SCHEDULED_CONFIGURATIONS")
 
-        if scheduled_configs is None:
+        if not scheduled_configs:
             return
 
-        for scheduled_config in scheduled_configs.data():
-            config_name = scheduled_config.name()
+        for config_name, scheduled_config in scheduled_configs.items():
             self.sysLog(msg=f'Validating Scheduled Configuration: {config_name}', doPrint=True)
 
             # Validate the 'configuration' field
-            config_node = scheduled_config.child().find_path("configuration")
+            config_node = scheduled_config.get("configuration")
             if config_node:
-                self._validate_node(config_node)
+                self._validate_configuration(config_node)
+            else:
+                raise Exception(f'Missing "configuration" field in scheduled configuration: {config_name}')
 
             # Validate the 'deactivation_configuration' field
-            deactivation_node = scheduled_config.child().find_path("deactivation_configuration")
+            deactivation_node = scheduled_config.get("deactivation_configuration")
             if deactivation_node:
-                self._validate_node(deactivation_node)
+                if isinstance(deactivation_node, str) and deactivation_node.lower() == "remove":
+                    continue
+                else:
+                    self._validate_configuration(deactivation_node)
+            else: 
+                raise Exception(f'Missing "deactivation_configuration" field in scheduled configuration: {config_name}')
 
-    def _validate_node(self, node):
+    def _validate_configuration(self, node):
         '''
         Recursively validate a configuration node.
 
@@ -1075,11 +1081,10 @@ class ConfigMgmtScheduledConfig(ConfigMgmt):
         Returns:
             void
         '''
-        try:
-            node.validate(ly.LYD_OPT_CONFIG, self.sy.ctx)
-        except Exception as e:
-            self.fail(f'Validation failed for node {node.path()}: {str(e)}')
-            
+        self.loadData(node)
+        super().validateConfigData()
+        
+        
     def writeConfigDB(self, configJson = ""):
         '''
         Write the validated config to Config DB.
