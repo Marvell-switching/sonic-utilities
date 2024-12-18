@@ -2199,7 +2199,8 @@ def radius(db):
             'auth_type': 'pap (default)',
             'retransmit': '3 (default)',
             'timeout': '5 (default)',
-            'passkey': '<EMPTY_STRING> (default)'
+            'passkey': '<EMPTY_STRING> (default)',
+            'require_message_authenticator': 'disable (default)'
         }
     }
     if 'global' in data:
