@@ -485,6 +485,17 @@ def statistics(option):
 radius.add_command(statistics)
 
 
+@click.command("require-message-authenticator")
+@click.argument('option', type=click.Choice(["enable", "disable"]))
+def require_message_authenticator(option):
+    """Specify RADIUS client configuration option for requiring message-authenticator attribute in all request-access packets"""
+    if option == 'enable':
+        add_table_kv('RADIUS', 'global', 'require_message_authenticator', True)
+    elif option == 'disable':
+        add_table_kv('RADIUS', 'global', 'require_message_authenticator', False)
+radius.add_command(require_message_authenticator)
+
+
 # cmd: radius add <ip_address_or_domain_name> --retransmit COUNT --timeout SECOND --key SECRET --type TYPE --auth-port PORT --pri PRIORITY
 @click.command()
 @click.argument('address', metavar='<ip_address_or_domain_name>')
@@ -496,7 +507,8 @@ radius.add_command(statistics)
 @click.option('-p', '--pri', help="Priority, default 1", type=click.IntRange(1, 64), default=1)
 @click.option('-m', '--use-mgmt-vrf', help="Management vrf, default is no vrf", is_flag=True)
 @click.option('-s', '--source-interface', help='Source Interface')
-def add(address, retransmit, timeout, key, auth_type, auth_port, pri, use_mgmt_vrf, source_interface):
+@click.option('-u', '--require-message-authenticator', help='Discards access-accept, access-reject, and access-challenge packets that do not contain a Message-Authenticator attribute', is_flag=True)
+def add(address, retransmit, timeout, key, auth_type, auth_port, pri, use_mgmt_vrf, source_interface, require_message_authenticator):
     """Specify a RADIUS server"""
 
     if ADHOC_VALIDATION:
@@ -531,6 +543,8 @@ def add(address, retransmit, timeout, key, auth_type, auth_port, pri, use_mgmt_v
             data['passkey'] = key
         if use_mgmt_vrf :
             data['vrf'] = "mgmt"
+        if require_message_authenticator:
+            data['require_message_authenticator'] = True
         if ADHOC_VALIDATION:
             if source_interface :
                 if (source_interface.startswith("Ethernet") or \
